@@ -1,0 +1,30 @@
+{
+  "name": "dev-arena",
+  "version": "1.0.0",
+  "description": "Real-time competitive coding platform for 1v1 and team battles with DSA/SQL challenges, dynamic rooms, matchmaking, and live code judging.",
+  "main": "index.js",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "check-types": "turbo check-types",
+    "clean": "turbo clean"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sudhanshu43r/Dev-Arena.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Sudhanshu43r/Dev-Arena/issues"
+  },
+  "homepage": "https://github.com/Sudhanshu43r/Dev-Arena#readme",
+  "devDependencies": {
+    "turbo": "^2.10.13",
+    "typescript": "^7.0.2"
+  }
+}
