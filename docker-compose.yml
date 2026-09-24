@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: dev-arena-postgres
+    restart: unless-stopped
+    env_file:
+      - .env.local
+      
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-devarena}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devarena_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-devarena}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

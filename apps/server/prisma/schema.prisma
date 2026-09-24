@@ -1,0 +1,351 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum ProblemType {
+  DSA
+  SQL
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum RoomVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum RoomFormat {
+  RANKED
+  UNRANKED
+}
+
+enum TeamMode {
+  ONE_V_ONE
+  TWO_V_TWO
+  THREE_V_THREE
+  FOUR_V_FOUR
+}
+
+enum RoomStatus {
+  WAITING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum MatchType {
+  QUICK
+  ROOM
+  PRACTICE
+}
+
+enum MatchStatus {
+  ONGOING
+  COMPLETED
+  ABORTED
+}
+
+enum SubmissionStatus {
+  PENDING
+  ACCEPTED
+  WRONG_ANSWER
+  TIME_LIMIT_EXCEEDED
+  RUNTIME_ERROR
+  COMPILE_ERROR
+  MEMORY_LIMIT_EXCEEDED
+}
+
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+model User {
+  id            String        @id @default(cuid())
+  username      String        @unique
+  email         String        @unique
+  avatarUrl     String?
+  bio           String?
+  role          Role          @default(USER)
+  status        AccountStatus @default(ACTIVE)
+  eloRating     Int           @default(1200)
+  matchesPlayed Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  passwordCredential PasswordCredential?
+  googleCredential    GoogleCredential?
+
+  problemsCreated   Problem[]          @relation("ProblemCreatedBy")
+  hostedRooms       Room[]             @relation("RoomHost")
+  roomParticipants  RoomParticipant[]
+  matchParticipants MatchParticipant[]
+  submissions       Submission[]
+  ratingHistory     RatingHistory[]
+  refreshTokens     RefreshToken[]  
+
+  followers Follow[] @relation("Following")
+  following Follow[] @relation("Follower")
+
+  reportsMade     Report[] @relation("Reporter")
+  reportsReceived Report[] @relation("ReportedUser")
+  reportsResolved Report[] @relation("ResolvedBy")
+
+  @@index([eloRating])
+}
+
+model RefreshToken {
+  id      String  @id @default(cuid())
+  userId  String  @unique
+  token   String  @unique
+  userAgent String?
+  ipAddress String?
+  isRevoked Boolean @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Normal email/password login. verificationToken is what you email out;
+// isEmailVerified flips to true once the user clicks the link.
+model PasswordCredential {
+  id                     String    @id @default(cuid())
+  userId                 String    @unique
+  passwordHash           String
+  isEmailVerified        Boolean   @default(false)
+  verificationToken      String?   @unique
+  verificationExpiresAt  DateTime?
+  resetToken             String?   @unique
+  resetTokenExpiresAt    DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Google OAuth login. googleId is Google's "sub" claim — unique per Google account.
+model GoogleCredential {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  googleId   String   @unique
+  email      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Topic {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  problems ProblemTopic[]
+}
+
+model Problem {
+  id          String      @id @default(cuid())
+  title       String
+  slug        String      @unique
+  description String
+  type        ProblemType
+  difficulty  Difficulty
+  points      Int         @default(100)
+  testCases   Json
+  constraints String?
+  createdById String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  createdBy     User?          @relation("ProblemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  topics        ProblemTopic[]
+  submissions   Submission[]
+  matchProblems MatchProblem[]
+
+  @@index([difficulty])
+  @@index([type])
+}
+
+model ProblemTopic {
+  problemId String
+  topicId   String
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  topic   Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([problemId, topicId])
+}
+
+model Room {
+  id              String         @id @default(cuid())
+  code            String         @unique
+  name            String
+  visibility      RoomVisibility
+  format          RoomFormat
+  teamMode        TeamMode
+  maxParticipants Int
+  difficulty      Difficulty?
+  status          RoomStatus     @default(WAITING)
+  hostId          String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  host         User              @relation("RoomHost", fields: [hostId], references: [id], onDelete: Cascade)
+  participants RoomParticipant[]
+  matches      Match[]
+
+  @@index([status])
+  @@index([visibility])
+}
+
+model RoomParticipant {
+  id       String   @id @default(cuid())
+  roomId   String
+  userId   String
+  team     Int      @default(0)
+  isReady  Boolean  @default(false)
+  joinedAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+}
+
+model Match {
+  id        String      @id @default(cuid())
+  roomId    String?
+  type      MatchType
+  status    MatchStatus @default(ONGOING)
+  ranked    Boolean     @default(true)
+  startedAt DateTime    @default(now())
+  endedAt   DateTime?
+
+  room          Room?              @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  participants  MatchParticipant[]
+  problems      MatchProblem[]
+  submissions   Submission[]
+  ratingHistory RatingHistory[]
+
+  @@index([status])
+}
+
+model MatchProblem {
+  matchId   String
+  problemId String
+  order     Int    @default(0)
+
+  match   Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@id([matchId, problemId])
+}
+
+model MatchParticipant {
+  id        String @id @default(cuid())
+  matchId   String
+  userId    String
+  team      Int    @default(0)
+  score     Int    @default(0)
+  rank      Int?
+  eloBefore Int
+  eloAfter  Int?
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, userId])
+}
+
+model Submission {
+  id           String           @id @default(cuid())
+  userId       String
+  problemId    String
+  matchId      String?
+  code         String
+  language     String
+  status       SubmissionStatus @default(PENDING)
+  score        Int              @default(0)
+  runtimeMs    Int?
+  memoryKb     Int?
+  errorMessage String?
+  createdAt    DateTime         @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  match   Match?  @relation(fields: [matchId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([problemId])
+  @@index([matchId])
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+}
+
+model Report {
+  id             String       @id @default(cuid())
+  reporterId     String
+  reportedUserId String
+  matchId        String?
+  reason         String
+  details        String?
+  status         ReportStatus @default(PENDING)
+  resolvedById   String?
+  resolvedAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  reporter     User  @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser User  @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  resolvedBy   User? @relation("ResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+}
+
+model RatingHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  matchId   String?
+  eloBefore Int
+  eloAfter  Int
+  change    Int
+  createdAt DateTime @default(now())
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match Match? @relation(fields: [matchId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
