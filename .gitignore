@@ -198,5 +198,8 @@ dist
 # SvelteKit build / generate output
 .svelte-kit
 
+Manware-s-AI-Learning-Toolkit/
+learning/
+
 # End of https://www.toptal.com/developers/gitignore/api/nextjs,expressionengine,node,dotenv
 

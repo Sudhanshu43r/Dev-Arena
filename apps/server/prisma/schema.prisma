@@ -112,7 +112,7 @@ model User {
   reportsReceived Report[] @relation("ReportedUser")
   reportsResolved Report[] @relation("ResolvedBy")
 
-  @@index([eloRating])
+  @@index([id])
 }
 
 model RefreshToken {

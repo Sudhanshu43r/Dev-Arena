@@ -1,20 +1,25 @@
-import express from "express";
-import cors from "cors";
 import dotenv from "dotenv";
-import { PrismaClient } from "@prisma/client";
-
 dotenv.config();
 
-const app = express();
-const prisma = new PrismaClient();
+import { app } from "./app.js";
+import { connectDatabase, prisma } from "./config/prisma.js";
+import { connectRedis } from "./config/redis.js";
+
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(cors());
-app.use(express.json());
+async function bootstrap() {
+  await connectDatabase();
+  await connectRedis();
 
+  const server = app.listen(PORT, () => {
+    console.log(` Server running on http://localhost:${PORT}`);
+  });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+}
+
+bootstrap().catch((error) => {
+  console.error(" Failed to bootstrap application:", error);
+  process.exit(1);
 });
 
 export { app, prisma };
