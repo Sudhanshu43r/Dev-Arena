@@ -4,7 +4,10 @@
   "description": "Real-time competitive coding platform for 1v1 and team battles with DSA/SQL challenges, dynamic rooms, matchmaking, and live code judging.",
   "main": "index.js",
   "private": true,
+<<<<<<< HEAD
   "packageManager": "pnpm@12.4.2",
+=======
+>>>>>>> b1ac355c1e2c19be5c4fa3fe8a11d2f5fae6729d
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -26,6 +29,10 @@
   "homepage": "https://github.com/Sudhanshu43r/Dev-Arena#readme",
   "devDependencies": {
     "turbo": "^2.10.13",
+<<<<<<< HEAD
     "typescript": "^5.8.2"
+=======
+    "typescript": "^7.0.2"
+>>>>>>> b1ac355c1e2c19be5c4fa3fe8a11d2f5fae6729d
   }
 }

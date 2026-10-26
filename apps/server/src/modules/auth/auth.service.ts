@@ -12,6 +12,10 @@ import { ApiError } from "../../utils/ApiError.js";
 import jwt from "jsonwebtoken";
 import { jwtConfig } from "../../config/jwt.js";
 import { Role, AccountStatus } from "@prisma/client";
+import { createHash } from "node:crypto";
+
+const hashRefreshToken = (token: string): string =>
+  createHash("sha256").update(token).digest("hex");
 
 export const generateAccessToken = (payload: AccessTokenPayload): string => {
   return jwt.sign(payload, jwtConfig.accessSecret, {
@@ -38,18 +42,10 @@ export const generateSession = async (
     throw new ApiError(500, "Token generation failed");
   }
 
-  const storedToken = await prisma.refreshToken.upsert({
-    where: { userId },
-    update: {
-      token: refreshToken,
-      isRevoked: false,
-      expiresAt: expirationDate,
-      ipAddress: metadata?.ipAddress,
-      userAgent: metadata?.userAgent,
-    },
-    create: {
+  const storedToken = await prisma.refreshToken.create({
+    data: {
       userId,
-      token: refreshToken,
+      tokenHash: hashRefreshToken(refreshToken),
       expiresAt: expirationDate,
       ipAddress: metadata?.ipAddress,
       userAgent: metadata?.userAgent,
@@ -182,21 +178,22 @@ export const refreshSessionService = async (
   }
 
   const userId = decoded.sub;
+  const tokenHash = hashRefreshToken(incomingRefreshToken);
 
   const storedToken = await prisma.refreshToken.findUnique({
-    where: { userId },
+    where: { tokenHash },
     include: { user: true },
   });
 
   // Token reuse or tampering detection
   if (
     !storedToken ||
-    storedToken.token !== incomingRefreshToken ||
+    storedToken.userId !== userId ||
     storedToken.isRevoked
   ) {
     if (storedToken) {
-      await prisma.refreshToken.update({
-        where: { userId },
+      await prisma.refreshToken.updateMany({
+        where: { userId: storedToken.userId, isRevoked: false },
         data: { isRevoked: true },
       });
     }
@@ -207,7 +204,10 @@ export const refreshSessionService = async (
   }
 
   if (storedToken.expiresAt < new Date()) {
-    await prisma.refreshToken.delete({ where: { userId } });
+    await prisma.refreshToken.update({
+      where: { tokenHash },
+      data: { isRevoked: true },
+    });
     throw new ApiError(401, "Refresh token expired. Please login again.");
   }
 
@@ -215,8 +215,34 @@ export const refreshSessionService = async (
     throw new ApiError(403, `Account is ${storedToken.user.status.toLowerCase()}`);
   }
 
-  // Rotate tokens
-  return generateSession(storedToken.userId, storedToken.user.role, metadata);
+  // Rotate tokens atomically so a refresh token cannot be used twice concurrently.
+  const accessToken = generateAccessToken({
+    sub: storedToken.userId,
+    role: storedToken.user.role,
+  });
+  const refreshToken = generateRefreshToken({ sub: storedToken.userId });
+  const expirationDate = new Date(Date.now() + jwtConfig.refreshExpiresInMs);
+
+  await prisma.$transaction(async (tx) => {
+    const revoked = await tx.refreshToken.updateMany({
+      where: { id: storedToken.id, isRevoked: false },
+      data: { isRevoked: true },
+    });
+    if (revoked.count !== 1) {
+      throw new ApiError(401, "Refresh token has already been used");
+    }
+    await tx.refreshToken.create({
+      data: {
+        userId: storedToken.userId,
+        tokenHash: hashRefreshToken(refreshToken),
+        expiresAt: expirationDate,
+        ipAddress: metadata?.ipAddress,
+        userAgent: metadata?.userAgent,
+      },
+    });
+  });
+
+  return { accessToken, refreshToken };
 };
 
 export const logoutService = async (userId: string): Promise<void> => {

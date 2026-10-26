@@ -1,11 +1,14 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// ───────────────────────── ENUMS ─────────────────────────
 
 enum Role {
   USER
@@ -23,10 +26,29 @@ enum ProblemType {
   SQL
 }
 
+enum ProblemMode {
+  SOLVE
+  BUG_FIX
+}
+
+enum ScoringType {
+  BINARY
+  PARTIAL
+}
+
 enum Difficulty {
   EASY
   MEDIUM
   HARD
+}
+
+enum Language {
+  CPP
+  JAVA
+  PYTHON
+  JAVASCRIPT
+  GO
+  SQL
 }
 
 enum RoomVisibility {
@@ -75,11 +97,22 @@ enum SubmissionStatus {
   MEMORY_LIMIT_EXCEEDED
 }
 
+enum TestResultStatus {
+  PASSED
+  FAILED
+  TIME_LIMIT_EXCEEDED
+  RUNTIME_ERROR
+  MEMORY_LIMIT_EXCEEDED
+  SKIPPED
+}
+
 enum ReportStatus {
   PENDING
   RESOLVED
   DISMISSED
 }
+
+// ───────────────────────── AUTH ─────────────────────────
 
 model User {
   id            String        @id @default(cuid())
@@ -95,7 +128,8 @@ model User {
   updatedAt     DateTime      @updatedAt
 
   passwordCredential PasswordCredential?
-  googleCredential    GoogleCredential?
+  googleCredential   GoogleCredential?
+  refreshTokens      RefreshToken[]
 
   problemsCreated   Problem[]          @relation("ProblemCreatedBy")
   hostedRooms       Room[]             @relation("RoomHost")
@@ -103,7 +137,6 @@ model User {
   matchParticipants MatchParticipant[]
   submissions       Submission[]
   ratingHistory     RatingHistory[]
-  refreshTokens     RefreshToken[]  
 
   followers Follow[] @relation("Following")
   following Follow[] @relation("Follower")
@@ -112,16 +145,42 @@ model User {
   reportsReceived Report[] @relation("ReportedUser")
   reportsResolved Report[] @relation("ResolvedBy")
 
-  @@index([id])
+  @@index([eloRating])
+}
+
+model PasswordCredential {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  passwordHash          String
+  isEmailVerified       Boolean   @default(false)
+  verificationToken     String?   @unique
+  verificationExpiresAt DateTime?
+  resetToken            String?   @unique
+  resetTokenExpiresAt   DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model GoogleCredential {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  googleId  String   @unique
+  email     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model RefreshToken {
-  id      String  @id @default(cuid())
-  userId  String  @unique
-  token   String  @unique
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
   userAgent String?
   ipAddress String?
-  isRevoked Boolean @default(false)
+  isRevoked Boolean  @default(false)
   expiresAt DateTime
   createdAt DateTime @default(now())
 
@@ -130,34 +189,7 @@ model RefreshToken {
   @@index([userId])
 }
 
-// Normal email/password login. verificationToken is what you email out;
-// isEmailVerified flips to true once the user clicks the link.
-model PasswordCredential {
-  id                     String    @id @default(cuid())
-  userId                 String    @unique
-  passwordHash           String
-  isEmailVerified        Boolean   @default(false)
-  verificationToken      String?   @unique
-  verificationExpiresAt  DateTime?
-  resetToken             String?   @unique
-  resetTokenExpiresAt    DateTime?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-// Google OAuth login. googleId is Google's "sub" claim — unique per Google account.
-model GoogleCredential {
-  id         String   @id @default(cuid())
-  userId     String   @unique
-  googleId   String   @unique
-  email      String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
+// ───────────────────────── PROBLEMS ─────────────────────────
 
 model Topic {
   id        String   @id @default(cuid())
@@ -166,29 +198,54 @@ model Topic {
   createdAt DateTime @default(now())
 
   problems ProblemTopic[]
+  rooms    RoomTopic[]
 }
 
 model Problem {
-  id          String      @id @default(cuid())
-  title       String
-  slug        String      @unique
-  description String
-  type        ProblemType
-  difficulty  Difficulty
-  points      Int         @default(100)
-  testCases   Json
-  constraints String?
-  createdById String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id         String      @id @default(cuid())
+  title      String
+  slug       String      @unique
+  type       ProblemType
+  mode       ProblemMode @default(SOLVE)
+  difficulty Difficulty
 
-  createdBy     User?          @relation("ProblemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  // statement sections (all markdown)
+  statement    String // the problem story / task
+  inputFormat  String // what the input looks like
+  outputFormat String // what to print / return
+  constraints  String? // e.g. 1 <= n <= 10^5
+  notes        String? // extra remarks, shown at the end
+
+  hints            String[] @default([])
+  estimatedMinutes Int?
+
+  timeLimitMs   Int @default(2000)
+  memoryLimitKb Int @default(262144)
+
+  scoringType          ScoringType @default(BINARY)
+  points               Int         @default(100)
+  battleEnabled        Boolean     @default(true)
+  timeBonus            Boolean     @default(false)
+  difficultyMultiplier Float       @default(1.0)
+
+  isPublished Boolean   @default(false)
+  deletedAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  createdBy     User?             @relation("ProblemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   topics        ProblemTopic[]
+  languages     ProblemLanguage[]
+  testCases     TestCase[]
+  editorial     Editorial?
+  stats         ProblemStats?
   submissions   Submission[]
   matchProblems MatchProblem[]
 
   @@index([difficulty])
   @@index([type])
+  @@index([isPublished, deletedAt])
 }
 
 model ProblemTopic {
@@ -200,6 +257,65 @@ model ProblemTopic {
 
   @@id([problemId, topicId])
 }
+
+model ProblemLanguage {
+  id                String   @id @default(cuid())
+  problemId         String
+  language          Language
+  starterCode       String
+  functionSignature String
+  buggyCode         String?
+  solutionCode      String?
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([problemId, language])
+}
+
+model TestCase {
+  id             String   @id @default(cuid())
+  problemId      String
+  input          String
+  expectedOutput String
+  explanation    String?
+  isSample       Boolean  @default(false)
+  weight         Int      @default(1)
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  problem Problem                @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  results SubmissionTestResult[]
+
+  @@index([problemId, isSample])
+  @@index([problemId, order])
+}
+
+model Editorial {
+  problemId          String   @id
+  intuition          String
+  bruteForce         String
+  betterSolution     String?
+  optimalSolution    String
+  proofOfCorrectness String?
+  dryRun             String?
+  commonMistakes     String[] @default([])
+  timeComplexity     String
+  spaceComplexity    String
+  updatedAt          DateTime @updatedAt
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+}
+
+model ProblemStats {
+  problemId           String   @id
+  totalSubmissions    Int      @default(0)
+  acceptedSubmissions Int      @default(0)
+  updatedAt           DateTime @updatedAt
+
+  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+}
+
+// ───────────────────────── ROOMS & MATCHES ─────────────────────────
 
 model Room {
   id              String         @id @default(cuid())
@@ -216,11 +332,22 @@ model Room {
   updatedAt       DateTime       @updatedAt
 
   host         User              @relation("RoomHost", fields: [hostId], references: [id], onDelete: Cascade)
+  topics       RoomTopic[]
   participants RoomParticipant[]
   matches      Match[]
 
   @@index([status])
   @@index([visibility])
+}
+
+model RoomTopic {
+  roomId  String
+  topicId String
+
+  room  Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  topic Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, topicId])
 }
 
 model RoomParticipant {
@@ -251,6 +378,7 @@ model Match {
   problems      MatchProblem[]
   submissions   Submission[]
   ratingHistory RatingHistory[]
+  reports       Report[]
 
   @@index([status])
 }
@@ -280,7 +408,10 @@ model MatchParticipant {
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, userId])
+  @@index([userId])
 }
+
+// ───────────────────────── SUBMISSIONS ─────────────────────────
 
 model Submission {
   id           String           @id @default(cuid())
@@ -288,7 +419,7 @@ model Submission {
   problemId    String
   matchId      String?
   code         String
-  language     String
+  language     Language
   status       SubmissionStatus @default(PENDING)
   score        Int              @default(0)
   runtimeMs    Int?
@@ -296,14 +427,35 @@ model Submission {
   errorMessage String?
   createdAt    DateTime         @default(now())
 
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  problem Problem @relation(fields: [problemId], references: [id], onDelete: Cascade)
-  match   Match?  @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem     Problem                @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  match       Match?                 @relation(fields: [matchId], references: [id], onDelete: SetNull)
+  testResults SubmissionTestResult[]
 
   @@index([userId])
   @@index([problemId])
   @@index([matchId])
 }
+
+model SubmissionTestResult {
+  id           String           @id @default(cuid())
+  submissionId String
+  testCaseId   String
+  status       TestResultStatus
+  actualOutput String?
+  errorMessage String?
+  runtimeMs    Int?
+  memoryKb     Int?
+  createdAt    DateTime         @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  testCase   TestCase   @relation(fields: [testCaseId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, testCaseId])
+  @@index([submissionId])
+}
+
+// ───────────────────────── SOCIAL & MODERATION ─────────────────────────
 
 model Follow {
   followerId  String
@@ -314,6 +466,7 @@ model Follow {
   following User @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
 
   @@id([followerId, followingId])
+  @@index([followingId])
 }
 
 model Report {
@@ -328,9 +481,10 @@ model Report {
   resolvedAt     DateTime?
   createdAt      DateTime     @default(now())
 
-  reporter     User  @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
-  reportedUser User  @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
-  resolvedBy   User? @relation("ResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  reporter     User   @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser User   @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  resolvedBy   User?  @relation("ResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  match        Match? @relation(fields: [matchId], references: [id], onDelete: SetNull)
 
   @@index([status])
 }
@@ -347,5 +501,5 @@ model RatingHistory {
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   match Match? @relation(fields: [matchId], references: [id], onDelete: SetNull)
 
-  @@index([userId])
+  @@index([userId, createdAt])
 }

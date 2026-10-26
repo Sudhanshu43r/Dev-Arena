@@ -3,10 +3,13 @@
 
 ### dotenv ###
 .env
+<<<<<<< HEAD
 .env.*
 
 ### Turborepo ###
 .turbo/
+=======
+>>>>>>> b1ac355c1e2c19be5c4fa3fe8a11d2f5fae6729d
 
 ### ExpressionEngine ###
 .DS_Store
@@ -198,8 +201,12 @@ dist
 # SvelteKit build / generate output
 .svelte-kit
 
+<<<<<<< HEAD
 Manware-s-AI-Learning-Toolkit/
 learning/
 
 # End of https://www.toptal.com/developers/gitignore/api/nextjs,expressionengine,node,dotenv
 
+=======
+# End of https://www.toptal.com/developers/gitignore/api/nextjs,expressionengine,node,dotenv
+>>>>>>> b1ac355c1e2c19be5c4fa3fe8a11d2f5fae6729d

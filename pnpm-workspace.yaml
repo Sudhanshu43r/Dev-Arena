@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+<<<<<<< HEAD
 
 allowBuilds:
   '@prisma/client': true
@@ -8,3 +9,7 @@ allowBuilds:
   argon2: false
   esbuild: false
   prisma: true
+=======
+allowBuilds:
+  esbuild: false
+>>>>>>> b1ac355c1e2c19be5c4fa3fe8a11d2f5fae6729d
